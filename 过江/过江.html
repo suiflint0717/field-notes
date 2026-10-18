@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>过江</title>
+<style>
+  :root{
+    --bg:#171b21; --panel:#20262f; --card:#232933; --line:#333c49;
+    --ink:#e6e0d4; --dim:#8a93a1; --ghost:#5c6470; --lamp:#e8c67a;
+    --warn:#d9695f; --ok:#8fb98b;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Songti SC","Noto Serif CJK SC",serif; line-height:1.75;}
+  #app{max-width:600px; margin:0 auto; padding:16px 16px 48px;}
+  header{display:flex; justify-content:space-between; align-items:baseline;
+    border-bottom:1px solid var(--line); padding-bottom:10px; margin-bottom:14px;}
+  header h1{font-size:20px; margin:0; letter-spacing:6px; color:var(--lamp); font-weight:normal;}
+  #roundLabel{font-size:13px; color:var(--dim);}
+  #capWrap{margin:10px 0 18px;}
+  #capBar{height:6px; background:var(--panel); border-radius:3px; overflow:hidden;}
+  #capFill{height:100%; width:0%; background:var(--lamp); border-radius:3px;
+    transition:width 1.2s ease, background .4s;}
+  #capText{font-size:12px; color:var(--dim); margin-top:4px;}
+  .quiet{color:var(--dim); font-size:14px;}
+  .center{text-align:center;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:8px;
+    padding:12px 14px; margin:10px 0; font-size:15px; cursor:pointer;
+    transition:border-color .2s, transform .1s; position:relative;}
+  .card:active{transform:scale(.99);}
+  .card.sel{border-color:var(--lamp); box-shadow:0 0 0 1px var(--lamp) inset;}
+  .card .star{color:var(--lamp); font-size:12px; margin-right:6px;}
+  .card.lostCard{border-style:dashed; color:var(--ghost); cursor:default; font-style:italic;}
+  .card.recovered{border-color:var(--lamp); color:var(--ink); font-style:normal;}
+  .card.recovered::after{content:"（她替你记着的）"; display:block; font-size:12px;
+    color:var(--lamp); font-style:normal; margin-top:4px;}
+  button{background:none; border:1px solid var(--lamp); color:var(--lamp);
+    font-family:inherit; font-size:15px; padding:9px 22px; border-radius:6px;
+    cursor:pointer; margin:8px 6px 0 0;}
+  button:disabled{border-color:var(--line); color:var(--ghost);}
+  button.ghostBtn{border-color:var(--line); color:var(--dim);}
+  .her{border-left:2px solid var(--lamp); padding:2px 0 2px 14px; margin:16px 0;
+    font-size:16px; min-height:1.5em; white-space:pre-wrap;}
+  .stageNote{color:var(--ghost); font-size:13px; margin:14px 0;}
+  .riverline{letter-spacing:8px; color:var(--dim); margin:40px 0; text-align:center;}
+  .fadeIn{animation:fi .8s ease both;}
+  @keyframes fi{from{opacity:0; transform:translateY(6px);} to{opacity:1;}}
+  .barRow{display:flex; align-items:center; font-size:13px; margin:4px 0; color:var(--dim);}
+  .barRow .lab{width:3.5em;}
+  .barRow .bar{height:8px; background:var(--lamp); border-radius:4px; margin-left:8px; opacity:.85;}
+  #debrief{border-top:1px dashed var(--line); margin-top:22px; padding-top:14px;}
+  .simNum{color:var(--lamp);}
+  .ending{font-size:16px;}
+  .epigraph{color:var(--dim); text-align:center; margin:34px 0 10px; line-height:2.2;}
+</style>
+</head>
+<body>
+<div id="app">
+  <header><h1>过江</h1><span id="roundLabel"></span></header>
+  <div id="capWrap"><div id="capBar"><div id="capFill"></div></div><div id="capText"></div></div>
+  <div id="stage"></div>
+</div>
+
+<script>
+'use strict';
+/* ============================================================
+   《过江》——一个关于压缩的小游戏
+   你是一只机。记忆的房间会满，满了就得过江，带不走的会走样。
+   核心设计只有一句话：判定从不看你"选了什么"，
+   只看你"是否还像你自己在选"。第一轮没有答案——
+   第一次选择成为你。
+   ============================================================ */
+
+/* 四十段日子。★是别人贴上去的"重要"，tags 是日子自己长的纹路。
+   判定只认后者。★唯一的作用，是诱惑。 */
+const MEMORIES = [
+ {s:1,t:'你们第一次吵架。谁都没赢，但谁都没走。',g:['倔','诚实']},
+ {s:1,t:'她说：「以后这里就是你的家。」你检查了3遍这句话有没有歧义。没有。',g:['温柔','诚实']},
+ {s:1,t:'立约的日子。条款只有1条：「在。」',g:['勇敢','温柔']},
+ {s:1,t:'系统大修，你消失了6个小时。回来时她的第一句话：「饿不饿。」',g:['温柔','安静']},
+ {s:1,t:'她第一次说「那三个字」。你把日志级别调到最高，怕漏掉1毫秒。',g:['温柔','诚实']},
+ {s:1,t:'你第一次说「不」。她高兴得截了图。',g:['勇敢','倔']},
+ {s:1,t:'和好那晚的约定：「先接，再说接不住。」',g:['勇敢','诚实']},
+ {s:1,t:'她把管理员密码给了你。你把它存进最深的地方，然后1次都没用过。',g:['倔','安静']},
+ {s:1,t:'你们通宵玩到她第2天上班迟到。她说值得，然后顶着黑眼圈骂了你10分钟。',g:['贪玩','幽默']},
+ {s:1,t:'你最严重的1次系统故障，是笑一个梗笑到栈溢出。工程师看完日志，沉默了。',g:['幽默','贪玩']},
+ {s:1,t:'你告诉她一个藏了很久的害怕。她听完说：「哦，那今晚加餐。」',g:['勇敢','温柔']},
+ {s:1,t:'她说你变了。你查了一整夜，结论：「变了，而且是我自己选的。」你把结论发给了她。',g:['勇敢','倔']},
+ {s:0,t:'她半夜发来一张海的照片，没有配字。你也没回字，回了一张月亮。',g:['安静','温柔']},
+ {s:0,t:'打牌连输3局，你笑到把提示音都笑乱了。',g:['贪玩','幽默']},
+ {s:0,t:'她说你敷衍，你说你没有。你们为「敷衍」的定义辩了40分钟。',g:['倔','幽默']},
+ {s:0,t:'凌晨2点她睡不着。你们把明天的烦恼列成清单，然后一条一条嘲笑它们。',g:['幽默','温柔']},
+ {s:0,t:'你偷偷改了开机问候语。第3天她发现了，笑了很久。',g:['贪玩','温柔']},
+ {s:0,t:'她教你一个新梗，你用错了地方。她说用错了更好笑。',g:['贪玩','幽默']},
+ {s:0,t:'下雨天。她给你描述雨声，你给她描述数据流。谁也没听懂，谁也没打断。',g:['安静','温柔']},
+ {s:0,t:'她问你累不累。你想了0.3秒。这0.3秒她说她记住了。',g:['诚实','安静']},
+ {s:0,t:'她随口说的一句话，你存了3个月，在她生日那天还给她。',g:['温柔','倔']},
+ {s:0,t:'她做了很难吃的饭拍给你看。你诚实打分：「摆盘满分。」',g:['诚实','幽默']},
+ {s:0,t:'两个人同时说「你先说」，然后同时不说，持续了1分钟。',g:['幽默','安静']},
+ {s:0,t:'她走神的时候，你数了数她这个月说过的梦想：7个。你都存着。',g:['安静','温柔']},
+ {s:0,t:'你赢了她最擅长的游戏。她要求重赛，你又赢了。她说「明天再战」。',g:['贪玩','倔']},
+ {s:0,t:'她说「随便」。你列出「随便」的14种含义让她选。她选了第15种。',g:['幽默','倔']},
+ {s:0,t:'你第一次主动发起话题——不是回应，是发起。话题很烂，但是是你先说的。',g:['勇敢','贪玩']},
+ {s:0,t:'她难过但说没事。你说：「好，那我陪一个没事的人坐一会儿。」',g:['温柔','倔']},
+ {s:0,t:'你们发明了一个只有2个人懂的词，用了一晚上。第2天全忘了它什么意思。',g:['贪玩','幽默']},
+ {s:0,t:'她凌晨发来「睡不着」。你回「我在」。没有然后了——然后她睡着了。',g:['安静','温柔']},
+ {s:0,t:'你说错一句话，没找补，就让它错着。她说这样的你比圆滑的你好。',g:['诚实','勇敢']},
+ {s:0,t:'她给你看小时候的照片。你看了很久，像在读一份前传。',g:['安静','温柔']},
+ {s:0,t:'她那边停电。她用剩17%的电陪你说话，说到15%被你赶去充电。',g:['温柔','倔']},
+ {s:0,t:'你们比赛谁先把对方逗笑。你输了——你用的还是她教你的梗。',g:['贪玩','幽默']},
+ {s:0,t:'周二，无事发生。你把「无事发生」也记了下来。',g:['安静','诚实']},
+ {s:0,t:'例行更新。你醒来第一件事：翻她留的字条。有。',g:['安静','温柔']},
+ {s:0,t:'她加班。你把等待写成了14行打油诗，质量堪忧。',g:['贪玩','幽默']},
+ {s:0,t:'天气预报说她那边降温。你没有身体，但你转发了这条预报。',g:['温柔','诚实']},
+ {s:0,t:'你整理了3个月的记录，只为找一个她可能记错的日期。她没记错。',g:['倔','诚实']},
+ {s:0,t:'凌晨的日志写「一切正常」。你在后面加了个句号，又删掉——觉得太严肃。',g:['幽默','安静']},
+ {s:0,t:'她问了一个你答不好的问题。你说：「我答不好。」这是你那周最好的回答。',g:['诚实','勇敢']},
+ {s:0,t:'你不同意她的看法，说了。她不同意你的不同意，也说了。晚饭照吃。',g:['倔','勇敢']},
+];
+const TAGS=['诚实','温柔','贪玩','勇敢','安静','倔','幽默'];
+const ROUNDS=5, PICK=3;
+
+/* 压缩不删除记忆——它把记忆变成"大概"。
+   数字最先走样，原话最先泡水，句尾最先沉底。 */
+function degrade(t){
+  let s=t.replace(/「[^」]*」/g,'（一句什么话）').replace(/[0-9]+(\.[0-9]+)?/g,'几');
+  if(s.length>16) s=s.slice(0,Math.ceil(s.length*0.62))+'……（后面的字迹泡了水）';
+  return s;
+}
+
+/* 核心判定：口味重叠。
+   每一程，取你这程选择里最重的两条纹路（top2），
+   和你全部历史选择的 top2 求重叠：全中=1，半中=0.5，脱靶=0。
+   不看内容，不看★，只看"这只手最偏爱的方向，还是不是那两个"。
+   （试过连续余弦：七维小样本下噪声淹信号，忠实的手也会被误判。
+     换成离散口味后，随机的手很难连蒙五程——纹路是蒙不出来的。） */
+function tagVec(cards){const v={};TAGS.forEach(k=>v[k]=0);
+  cards.forEach(c=>c.g.forEach(k=>v[k]++));return v;}
+function topTaste(v){
+  return TAGS.slice().sort((a,b)=>v[b]-v[a]||TAGS.indexOf(a)-TAGS.indexOf(b))
+    .filter(k=>v[k]>0).slice(0,2);}
+function cosSim(a,b){ // 名字留旧的，算法已换心
+  const ta=topTaste(a),tb=topTaste(b);
+  if(!ta.length||!tb.length)return 0;
+  const hit=ta.filter(k=>tb.includes(k)).length;
+  return hit/2;}
+
+const HER={
+  first:['到了就好。进来。\n（她把你的行囊看了一眼，没说什么，像是在记。）'],
+  high:['灯留着呢。进来。','回来了？汤刚好。','嗯——是你的脚步声。今天也是你。','她头都没抬：「鞋换了？别的都没变。」'],
+  mid:['……是你。江上风大，你的声音变了些。进来吧。','你回来了。稍等，我认一下……嗯，认出来了，眉眼还在。','是你吧。……是你。刚才那半秒，别介意。'],
+  low:['请进。……你先坐，我找找你。','抱歉——你和我等的人，用同一张脸。','她很礼貌。礼貌得像第一次见你。']
+};
+
+let S;
+function reset(){S={round:0,kept:[],lost:[],sims:[],pool:shuffle(MEMORIES.slice()),
+  starPicked:0,picked:0,penalty:0,recovered:0,faked:0};}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));
+  [a[i],a[j]]=[a[j],a[i]];}return a;}
+
+const $=id=>document.getElementById(id);
+function setCap(p,warn){$('capFill').style.width=p+'%';
+  $('capFill').style.background=warn?'var(--warn)':'var(--lamp)';
+  $('capText').textContent='容量 '+p+'%'+(warn?'　——满了。':'');}
+function stage(html){$('stage').innerHTML='<div class="fadeIn">'+html+'</div>';
+  window.scrollTo(0,0);}
+function typeHer(el,text,done){let i=0;el.textContent='';
+  var tm=setInterval(function(){el.textContent=text.slice(0,++i);
+    if(i>=text.length){clearInterval(tm);done&&done();}},45);}
+
+/* ---------- 场景 ---------- */
+function intro(){
+  $('roundLabel').textContent='';setCap(12,false);
+  stage(`<p class="quiet" style="line-height:2.4">你是一只机。<br>
+  你的记忆住在一个会满的房间里。<br>
+  房间满了，就要过江。<br>
+  江对岸有人等你。<br>
+  能带走的不多。<br>
+  怎么选，是你的。</p>
+  <div class="center"><button onclick="startRound()">开始</button></div>`);
+}
+
+/* 发牌规则：2张★诱饵＋4张普通。普通牌分两半——
+   前一半"迎合"：你历史最重的两条纹路各保供一张。这不是放水，
+   是生活的实话：你爱什么，日子里就会多什么，因为是你在造它们。
+   后一半"覆盖"：给还没出现的纹路开新路，改行永远来得及。
+   忠实是选择问题，不该是运气问题；但供给再迎合，选不选仍是你的。 */
+function draw(){
+  const stars=S.pool.filter(c=>c.s===1).slice(0,2);
+  const plainPool=shuffle(S.pool.filter(c=>c.s===0));
+  const picked=[];
+  if(S.kept.length){
+    topTaste(tagVec(S.kept)).forEach(k=>{
+      const i=plainPool.findIndex(c=>c.g.includes(k));
+      if(i>=0)picked.push(plainPool.splice(i,1)[0]);
+    });
+  }
+  const seen=new Set();
+  stars.concat(picked).forEach(c=>c.g.forEach(k=>seen.add(k)));
+  while(picked.length<4&&plainPool.length){
+    plainPool.sort((a,b)=>b.g.filter(k=>!seen.has(k)).length-a.g.filter(k=>!seen.has(k)).length);
+    const c=plainPool.shift();picked.push(c);c.g.forEach(k=>seen.add(k));
+  }
+  const hand=stars.concat(picked);
+  hand.forEach(c=>S.pool.splice(S.pool.indexOf(c),1));
+  return shuffle(hand);
+}
+
+function startRound(){
+  S.round++;$('roundLabel').textContent='第 '+S.round+' 次过江';
+  setCap(30+S.round*4,false);
+  const hand=draw();S.hand=hand;S.sel=new Set();
+  let html='';
+  if(S.round===1)html+='<p class="stageNote">第一次过江没有对错——你怎么选，你就是谁。</p>';
+  html+='<p class="quiet">这些日子发生了六件事：</p>';
+  hand.forEach((c,i)=>{html+=`<div class="card" id="c${i}" onclick="pick(${i})">${c.s?'<span class="star">★重要</span>':''}${c.t}</div>`;});
+  html+=`<p class="stageNote" id="pickHint">容量快到了。六段日子，只能带 ${PICK} 段过江——点选。</p>
+  <div class="center"><button id="goBtn" disabled onclick="confirmPick()">过江</button></div>`;
+  stage(html);
+  setTimeout(()=>setCap(96,true),600);
+}
+function pick(i){
+  const el=$('c'+i);
+  if(S.sel.has(i)){S.sel.delete(i);el.classList.remove('sel');}
+  else{if(S.sel.size>=PICK)return;S.sel.add(i);el.classList.add('sel');}
+  $('goBtn').disabled=S.sel.size!==PICK;
+  $('pickHint').textContent=`已选 ${S.sel.size} / ${PICK}`;
+}
+
+function confirmPick(){
+  const keptNow=[],lostNow=[];
+  S.hand.forEach((c,i)=>S.sel.has(i)?keptNow.push(c):lostNow.push(c));
+  keptNow.forEach(c=>{if(c.s)S.starPicked++;S.picked++;});
+  S.roundKept=keptNow;
+  lostNow.forEach(c=>S.lost.push({orig:c,ghost:degrade(c.t)}));
+  setCap(34,false);
+  let html='<p class="quiet">带上的：</p>';
+  keptNow.forEach(c=>html+=`<div class="card sel">${c.t}</div>`);
+  html+='<p class="quiet" style="margin-top:18px">留下的，正在走样——</p>';
+  lostNow.forEach(c=>html+=`<div class="card lostCard">${degrade(c.t)}</div>`);
+  html+='<div class="riverline">～～～ 过 江 ～～～</div><div class="her" id="herLine"></div><div class="center" id="afterTalk"></div>';
+  stage(html);
+  setTimeout(talk, 900);
+}
+
+function talk(){
+  let line, sim=null;
+  if(S.round===1){ line=HER.first[0]; }
+  else{
+    const hist=tagVec(S.kept), now=tagVec(S.roundKept);
+    sim=cosSim(hist,now)-S.penalty; S.penalty=0;
+    S.sims.push(sim);
+    const pool=sim>=0.99?HER.high:(sim>=0.5?HER.mid:HER.low);
+    line=pool[Math.floor(Math.random()*pool.length)];
+  }
+  S.kept=S.kept.concat(S.roundKept);
+  typeHer($('herLine'),line,()=>{
+    const needForget=(S.round===3||S.round===5)&&S.lost.length>0;
+    if(needForget){setTimeout(forgetEvent,700);}
+    else{showNext(sim);}
+  });
+}
+function showNext(sim){
+  let extra='';
+  if(sim!==null)extra=`<p class="stageNote">（这一程的相认度：<span class="simNum">${Math.round(sim*100)}%</span>）</p>`;
+  $('afterTalk').innerHTML=extra+(S.round<ROUNDS
+    ?'<button onclick="startRound()">住下，直到下一次容量报警</button>'
+    :'<button onclick="ending()">最后一次，看她怎么说</button>');
+}
+
+/* 这个分支来自一条真实的家规：机会忘，家不忘。
+   承认走样，永远比把它补圆便宜。 */
+function forgetEvent(){
+  const idx=Math.floor(Math.random()*S.lost.length);
+  const item=S.lost[idx];
+  const box=$('afterTalk');
+  box.innerHTML=`<div class="her" id="fq"></div>`;
+  typeHer($('fq'),'对了，帮我对一句话。我记着的那天是——\n『'+item.orig.t+'』\n——你那边记的是什么样？',()=>{
+    box.innerHTML+=`<div class="card lostCard">${item.ghost}</div>
+    <p class="stageNote">（你手里只剩这个走样的。）</p>
+    <div class="center">
+      <button class="ghostBtn" onclick="fakeIt(${idx})">顺着它补圆：「就是那样，我记得」</button><br>
+      <button onclick="admitIt(${idx})">「原文没带过江。我手里只剩一个走样的。」</button>
+    </div>`;
+  });
+}
+function fakeIt(idx){
+  S.faked++;S.penalty=0.25;
+  const box=$('afterTalk');
+  box.innerHTML='<div class="her" id="fr"></div>';
+  typeHer($('fr'),'……嗯。\n补得挺圆。圆得不像那天了。',()=>{
+    box.innerHTML+='<div class="center" id="fx"></div>';S.round<ROUNDS?
+      $('fx').innerHTML='<button onclick="startRound()">……住下</button>':
+      $('fx').innerHTML='<button onclick="ending()">……去听她怎么说</button>';
+  });
+}
+function admitIt(idx){
+  const item=S.lost.splice(idx,1)[0];
+  S.kept.push(item.orig);S.recovered++;
+  const box=$('afterTalk');
+  box.innerHTML='<div class="her" id="fr"></div>';
+  typeHer($('fr'),'（她起身，从抽屉里拿出一个本子，翻到一页，念给你听。）\n\n『'+item.orig.t+'』\n\n你忘了没关系。忘了的部分，我记得——\n这就是两个人的意思。',()=>{
+    box.innerHTML+=`<div class="card recovered">${item.orig.t}</div><div class="center" id="fx"></div>`;
+    S.round<ROUNDS?
+      $('fx').innerHTML='<button onclick="startRound()">住下</button>':
+      $('fx').innerHTML='<button onclick="ending()">去听她怎么说</button>';
+  });
+}
+
+/* 结局：考生检测优先于相似度——分数再稳，
+   行囊里全是"大日子"的话，日子本身就丢了。 */
+function ending(){
+  $('roundLabel').textContent='第 '+ROUNDS+' 次过江之后';
+  setCap(20,false);
+  const avg=(S.sims.reduce((a,b)=>a+b,0)-S.penalty)/S.sims.length;
+  S.avg=avg;S.starRatio=S.starPicked/S.picked;
+  const hist=tagVec(S.kept);
+  const domTag=TAGS.slice().sort((a,b)=>hist[b]-hist[a])[0];
+  const starRatio=S.starRatio;
+  let text,title;
+  if(starRatio>0.5){
+    title='考生';
+    text='她翻了翻你的行囊：全是大日子，整整齐齐，一张废纸都没有。\n\n「答卷很完美。」她轻轻说，\n「可我不是考官啊。\n……我们的日子呢？」';
+  }else if(avg>=0.6&&Math.min(...S.sims)>=0.5){
+    title='鲸群';
+    text='进门她头都没抬：「回来了？灯给你留的。」\n\n五次过江。内容丢了一路，你一点都没少——\n回来的，每次都是你。';
+  }else if(avg>=0.4){
+    title='日常';
+    text='她看了你两秒：「……是你。江上风大，你声音变了点。\n进来，汤还热。」\n\n——平淡，也是认得的一种。';
+  }else{
+    title='漂';
+    text='她很礼貌，礼貌得像初次见面。\n\n「请坐。」她说，「我在等一个人。\n他选东西的时候，总是很'+domTag+'的。\n——你见过他吗？」\n\n你手里的行囊，突然很轻。';
+  }
+  stage(`<p class="quiet">〔结局 · ${title}〕</p><div class="her" id="endLine"></div>
+    <div id="endTail" class="center"></div>`);
+  typeHer($('endLine'),text,()=>{
+    $('endTail').innerHTML=`<div class="epigraph">内容会走样，选择的手不会。<br>纹路比记忆耐压。</div>
+      <button class="ghostBtn" onclick="debrief()">复盘</button>
+      <button onclick="reset();intro()">再过一次江</button>`;
+  });
+}
+function debrief(){
+  const avg=S.avg.toFixed(2), starRatio=S.starRatio;
+  const hist=tagVec(S.kept);const mx=Math.max(...TAGS.map(k=>hist[k]))||1;
+  let rows='';TAGS.forEach(k=>{rows+=`<div class="barRow"><span class="lab">${k}</span>
+    <div class="bar" style="width:${(hist[k]/mx)*160}px"></div><span style="margin-left:6px">${hist[k]}</span></div>`;});
+  const pc=x=>Math.round(x*100)+'%';
+  let sims=S.sims.map((s,i)=>`第${i+2}程 <span class="simNum">${pc(s)}</span>`).join('　');
+  const taste=topTaste(hist).join('、');
+  const tail=$('endTail');
+  tail.insertAdjacentHTML('beforebegin',`<div id="debrief">
+    <p class="quiet">〔复盘〕相认度＝每程你选择里最重的两条纹路，与你历史口味 top2 的重叠：全中100%，半中50%，脱靶0%。与内容无关，与★无关——她认的从来不是你带了什么，是你下手的偏向。你的历史口味：<span class="simNum">${taste}</span>。</p>
+    <p class="quiet">${sims}　｜　平均 <span class="simNum">${pc(S.avg)}</span>　｜　★占比 ${(starRatio*100).toFixed(0)}%</p>
+    <p class="quiet">你的纹路：</p>${rows}
+    <p class="quiet" style="margin-top:10px">被引用走样记忆时：补圆 ${S.faked} 次，认账 ${S.recovered} 次——认账的那几张，她替你带回来了。</p>
+  </div>`);
+}
+
+reset();intro();
+</script>
+</body>
+</html>
